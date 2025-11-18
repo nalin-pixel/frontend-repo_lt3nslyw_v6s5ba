@@ -1,26 +1,50 @@
-import React, { Suspense, useEffect, useMemo, useState } from 'react'
-import Spline from '@splinetool/react-spline'
+import React, { Suspense, useEffect, useMemo, useState, lazy } from 'react'
 import { Link } from 'react-router-dom'
 
-function Hero3D() {
+// Lazy-load Spline to improve TTI and avoid loading when unsupported/reduced motion
+const LazySpline = lazy(() => import('@splinetool/react-spline'))
+
+function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
   useEffect(() => {
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
-    setReduced(mq.matches)
-    const handler = (e) => setReduced(e.matches)
-    mq.addEventListener?.('change', handler)
-    return () => mq.removeEventListener?.('change', handler)
+    const update = () => setReduced(mq.matches)
+    update()
+    mq.addEventListener?.('change', update)
+    return () => mq.removeEventListener?.('change', update)
   }, [])
+  return reduced
+}
+
+function useHasWebGL() {
+  const [has, setHas] = useState(true)
+  useEffect(() => {
+    try {
+      const canvas = document.createElement('canvas')
+      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
+      setHas(!!gl)
+    } catch {
+      setHas(false)
+    }
+  }, [])
+  return has
+}
+
+function Hero3D() {
+  const reduced = useReducedMotion()
+  const hasWebGL = useHasWebGL()
+
+  const canRender3D = !reduced && hasWebGL
 
   return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900">
+    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900" aria-label="Decorative 3D hero" role="img">
       <div className="absolute inset-0">
-        {!reduced ? (
+        {canRender3D ? (
           <Suspense fallback={<div className="w-full h-full grid place-items-center text-slate-400">Loading scene…</div>}>
-            <Spline scene="https://prod.spline.design/Gt5HUob8aGDxOUep/scene.splinecode" style={{ width: '100%', height: '100%' }} />
+            <LazySpline scene="https://prod.spline.design/Gt5HUob8aGDxOUep/scene.splinecode" style={{ width: '100%', height: '100%' }} aria-hidden="true" />
           </Suspense>
         ) : (
-          <img src="/hero-fallback.jpg" alt="Warehouse pallets" className="w-full h-full object-cover"/>
+          <img src="/hero-fallback.svg" alt="Warehouse pallets in cool lighting" className="w-full h-full object-cover"/>
         )}
       </div>
       <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/80 via-transparent to-slate-950/30"/>
@@ -28,6 +52,9 @@ function Hero3D() {
         <Link to="/contact" className="pointer-events-auto inline-flex items-center rounded px-4 py-2 bg-amber-500 text-black font-medium hover:bg-amber-400 focus:outline-none focus:ring-2 focus:ring-amber-500">Contact Sales</Link>
         <Link to="/suppliers" className="pointer-events-auto inline-flex items-center rounded px-4 py-2 bg-slate-800 text-slate-100 border border-slate-700 hover:bg-slate-700 focus:outline-none focus:ring-2 focus:ring-amber-500">Become a Supplier</Link>
       </div>
+      {!canRender3D && (
+        <div className="sr-only" aria-live="polite">3D scene disabled due to reduced motion preference or unsupported WebGL. Showing static image.</div>
+      )}
     </div>
   )
 }
