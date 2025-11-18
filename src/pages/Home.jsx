@@ -1,5 +1,5 @@
 import React, { Suspense, useEffect, useMemo, useState, lazy } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useLocation } from 'react-router-dom'
 
 // Lazy-load Spline to improve TTI and avoid loading when unsupported/reduced motion
 const LazySpline = lazy(() => import('@splinetool/react-spline'))
@@ -7,11 +7,17 @@ const LazySpline = lazy(() => import('@splinetool/react-spline'))
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
   useEffect(() => {
+    if (typeof window === 'undefined' || !('matchMedia' in window)) return
     const mq = window.matchMedia('(prefers-reduced-motion: reduce)')
     const update = () => setReduced(mq.matches)
     update()
     mq.addEventListener?.('change', update)
-    return () => mq.removeEventListener?.('change', update)
+    // Safari <14 fallback
+    mq.addListener?.(update)
+    return () => {
+      mq.removeEventListener?.('change', update)
+      mq.removeListener?.(update)
+    }
   }, [])
   return reduced
 }
@@ -21,8 +27,11 @@ function useHasWebGL() {
   useEffect(() => {
     try {
       const canvas = document.createElement('canvas')
-      const gl = canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl')
-      setHas(!!gl)
+      const supported = !!(
+        (window && ('WebGLRenderingContext' in window)) &&
+        (canvas.getContext('webgl2') || canvas.getContext('webgl') || canvas.getContext('experimental-webgl'))
+      )
+      setHas(!!supported)
     } catch {
       setHas(false)
     }
@@ -30,18 +39,63 @@ function useHasWebGL() {
   return has
 }
 
+function useQueryFlag(key) {
+  const { search } = useLocation()
+  return useMemo(() => {
+    const params = new URLSearchParams(search)
+    return params.get(key) !== null
+  }, [search, key])
+}
+
+class ErrorBoundary extends React.Component {
+  constructor(props){
+    super(props)
+    this.state = { hasError: false, errorMsg: '' }
+  }
+  static getDerivedStateFromError(err){
+    return { hasError: true, errorMsg: err?.message || 'Unknown error' }
+  }
+  componentDidCatch(err){
+    // eslint-disable-next-line no-console
+    console.error('Spline render error:', err)
+  }
+  render(){
+    if(this.state.hasError){
+      return (
+        <div className="w-full h-full grid place-items-center text-slate-400">
+          3D failed to load. Showing fallback.
+        </div>
+      )
+    }
+    return this.props.children
+  }
+}
+
 function Hero3D() {
   const reduced = useReducedMotion()
   const hasWebGL = useHasWebGL()
+  const debug = useQueryFlag('debug3d')
+  const forceFallback = useQueryFlag('fallback')
+  const force3D = useQueryFlag('force3d')
 
-  const canRender3D = !reduced && hasWebGL
+  const canRender3D = (force3D || (!reduced && hasWebGL)) && !forceFallback
+
+  useEffect(() => {
+    // Quick console diagnostics when needed
+    if (debug) {
+      // eslint-disable-next-line no-console
+      console.log('[Hero3D debug]', { reduced, hasWebGL, forceFallback, force3D })
+    }
+  }, [debug, reduced, hasWebGL, forceFallback, force3D])
 
   return (
     <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-slate-800 bg-slate-900" aria-label="Decorative 3D hero" role="img">
       <div className="absolute inset-0">
         {canRender3D ? (
           <Suspense fallback={<div className="w-full h-full grid place-items-center text-slate-400">Loading scene…</div>}>
-            <LazySpline scene="https://prod.spline.design/Gt5HUob8aGDxOUep/scene.splinecode" style={{ width: '100%', height: '100%' }} aria-hidden="true" />
+            <ErrorBoundary>
+              <LazySpline scene="https://prod.spline.design/Gt5HUob8aGDxOUep/scene.splinecode" style={{ width: '100%', height: '100%' }} aria-hidden="true" />
+            </ErrorBoundary>
           </Suspense>
         ) : (
           <img src="/hero-fallback.svg" alt="Warehouse pallets in cool lighting" className="w-full h-full object-cover"/>
@@ -54,6 +108,11 @@ function Hero3D() {
       </div>
       {!canRender3D && (
         <div className="sr-only" aria-live="polite">3D scene disabled due to reduced motion preference or unsupported WebGL. Showing static image.</div>
+      )}
+      {debug && (
+        <div className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-slate-800/80 text-slate-200 border border-slate-700">
+          reduced: {String(reduced)} | webgl: {String(hasWebGL)} | force3D: {String(force3D)} | fallback: {String(forceFallback)}
+        </div>
       )}
     </div>
   )
