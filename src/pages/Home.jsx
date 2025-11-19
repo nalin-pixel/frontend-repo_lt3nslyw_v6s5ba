@@ -1,8 +1,8 @@
 import React, { Suspense, useEffect, useMemo, useState, lazy } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
-// Lazy-load Spline to improve TTI and avoid loading when unsupported/reduced motion
-const LazySpline = lazy(() => import('@splinetool/react-spline'))
+// Lazy-load Three.js scene to improve TTI
+const CyberCrateScene = lazy(() => import('../components/CyberCrateScene'))
 
 function useReducedMotion() {
   const [reduced, setReduced] = useState(false)
@@ -57,7 +57,7 @@ class ErrorBoundary extends React.Component {
   }
   componentDidCatch(err){
     // eslint-disable-next-line no-console
-    console.error('Spline render error:', err)
+    console.error('3D render error:', err)
   }
   render(){
     if(this.state.hasError){
@@ -154,8 +154,7 @@ function Hero3D() {
         {canRender3D ? (
           <Suspense fallback={<div className="w-full h-full grid place-items-center text-slate-400">Loading scene…</div>}>
             <ErrorBoundary>
-              {/* NOTE: Ideally this references a cyber-crate scene. Keeping current scene as placeholder while overlay supplies the high-tech aesthetic. */}
-              <LazySpline scene="https://prod.spline.design/Gt5HUob8aGDxOUep/scene.splinecode" style={{ width: '100%', height: '100%' }} aria-hidden="true" />
+              <CyberCrateScene reduced={reduced} />
             </ErrorBoundary>
           </Suspense>
         ) : (
