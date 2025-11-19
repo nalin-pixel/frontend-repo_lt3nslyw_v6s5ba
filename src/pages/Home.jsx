@@ -1,4 +1,4 @@
-import React, { Suspense, useEffect, useMemo, useState, lazy } from 'react'
+import React, { Suspense, useEffect, useMemo, useRef, useState, lazy } from 'react'
 import { Link, useLocation } from 'react-router-dom'
 
 // Lazy-load Three.js scene to improve TTI
@@ -71,8 +71,24 @@ class ErrorBoundary extends React.Component {
   }
 }
 
-function HUDOverlay({ reduced }){
-  // Futuristic HUD overlay with pulse ring, leader line, and card
+function useScrollProgress() {
+  const [progress, setProgress] = useState(0)
+  useEffect(() => {
+    const onScroll = () => {
+      const doc = document.documentElement
+      const top = doc.scrollTop || document.body.scrollTop
+      const height = doc.scrollHeight - doc.clientHeight
+      const p = height > 0 ? top / height : 0
+      setProgress(Math.max(0, Math.min(1, p)))
+    }
+    onScroll()
+    window.addEventListener('scroll', onScroll, { passive: true })
+    return () => window.removeEventListener('scroll', onScroll)
+  }, [])
+  return progress
+}
+
+function HUDOverlay({ reduced, progress }){
   const [active, setActive] = useState(false)
   useEffect(() => {
     if (reduced) return
@@ -86,16 +102,18 @@ function HUDOverlay({ reduced }){
     return () => { clearInterval(id); clearTimeout(t) }
   }, [reduced])
 
+  // Fade content in as scroll reaches end
+  const contentOpacity = Math.min(1, Math.max(0, (progress - 0.6) / 0.4))
+
   return (
     <div className="pointer-events-none absolute inset-0">
-      {/* Ring position approximated to front face area */}
+      {/* Ring position */}
       <div
         className="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2"
         onMouseEnter={() => setActive(true)}
         onMouseLeave={() => setActive(false)}
         aria-hidden="true"
       >
-        {/* Pulsing torus-like glow using layered circles */}
         <div className={`relative w-24 h-24 ${reduced ? '' : 'animate-none'}`}>
           <span className={`absolute inset-0 rounded-full ring-2 ring-cyan-400/80 blur-[0.5px] shadow-[0_0_24px_4px_rgba(34,211,238,0.35)] ${active && !reduced ? 'scale-110 opacity-100 transition-transform' : 'opacity-90'}`}></span>
           {!reduced && (
@@ -105,19 +123,17 @@ function HUDOverlay({ reduced }){
         </div>
       </div>
 
-      {/* Leader line + Card (appears when active) */}
-      <div className={`absolute ${active ? 'opacity-100' : 'opacity-0'} transition-opacity duration-500`} style={{ left: '58%', top: '50%' }}>
-        {/* Leader line as SVG */}
-        <svg width="220" height="2" viewBox="0 0 220 2" fill="none" className="translate-y-[-2px]">
-          <path d="M0 1 H210" stroke="rgba(34,211,238,0.8)" strokeWidth="2" strokeLinecap="round">
-          </path>
-          <circle cx="210" cy="1" r="1.5" fill="rgba(34,211,238,0.9)" />
-        </svg>
-        {/* Info card */}
-        <div className="mt-3 w-72 rounded-xl border border-white/10 bg-slate-900/60 backdrop-blur-md p-4 shadow-[0_8px_30px_rgba(0,0,0,0.45)]">
-          <div className="text-white font-medium">UK-Wide Fulfilment</div>
-          <p className="mt-1 text-sm text-slate-300/90">Next-day pallet distribution and e‑commerce ready pick & pack across the United Kingdom.</p>
-          <p className="text-sm text-slate-400/80">Seamless ASN, barcode, and retailer routing compliance.</p>
+      {/* Content that fades in on the LEFT */}
+      <div className="absolute inset-y-0 left-0 flex items-center" style={{ opacity: contentOpacity }}>
+        <div className="mx-auto w-full max-w-6xl px-4 md:px-8">
+          <div className="max-w-xl">
+            <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-100">Your Trusted Partner in UK Wholesale Distribution</h1>
+            <p className="mt-3 text-lg md:text-xl font-medium text-cyan-300">Connecting Quality Brands with UK Retailers</p>
+            <div className="mt-6 flex flex-wrap items-center gap-4">
+              <Link to="/contact" className="pointer-events-auto inline-flex items-center rounded-md px-5 py-2.5 bg-amber-400 text-black font-semibold shadow-sm hover:bg-amber-300 focus:outline-none focus-visible:ring-2 focus-visible:ring-amber-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-colors">Contact Sales</Link>
+              <Link to="/suppliers" className="pointer-events-auto inline-flex items-center rounded-md px-5 py-2.5 border border-cyan-400/70 text-white hover:bg-cyan-400/10 focus:outline-none focus-visible:ring-2 focus-visible:ring-cyan-400 focus-visible:ring-offset-2 focus-visible:ring-offset-slate-900 transition-colors">Become a Supplier</Link>
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -130,31 +146,28 @@ function Hero3D() {
   const debug = useQueryFlag('debug3d')
   const forceFallback = useQueryFlag('fallback')
   const force3D = useQueryFlag('force3d')
+  const progress = useScrollProgress()
 
   const canRender3D = (force3D || (!reduced && hasWebGL)) && !forceFallback
 
   useEffect(() => {
     if (debug) {
       // eslint-disable-next-line no-console
-      console.log('[Hero3D debug]', { reduced, hasWebGL, forceFallback, force3D })
+      console.log('[Hero3D debug]', { reduced, hasWebGL, forceFallback, force3D, progress })
     }
-  }, [debug, reduced, hasWebGL, forceFallback, force3D])
+  }, [debug, reduced, hasWebGL, forceFallback, force3D, progress])
+
+  // Compute opacity for initial UI (should be 0 at top, 1 at end)
+  const initialContentOpacity = 1 - Math.min(1, Math.max(0, progress))
 
   return (
-    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-slate-800 bg-gradient-to-b from-[#0a0f16] to-[#06080c]" aria-label="Decorative 3D hero" role="img">
-      {/* Subtle spotlight */}
-      <div className="pointer-events-none absolute inset-0" aria-hidden>
-        <div className="absolute -top-24 left-1/2 -translate-x-1/2 h-[520px] w-[520px] rounded-full bg-[radial-gradient(ellipse_at_center,rgba(34,211,238,0.18),rgba(0,0,0,0)_60%)] blur-2xl" />
-        <div className="absolute bottom-0 inset-x-0 h-40 bg-gradient-to-t from-black/70 to-transparent" />
-        {/* Polished floor sheen */}
-        <div className="absolute bottom-0 left-1/2 -translate-x-1/2 h-24 w-[70%] rounded-[100%] bg-[radial-gradient(ellipse_at_center,rgba(15,23,42,0.7),rgba(0,0,0,0)_60%)] blur-xl opacity-70" />
-      </div>
-
+    <div className="relative aspect-[16/9] w-full overflow-hidden rounded-xl border border-slate-800 bg-[#050505]" aria-label="Decorative 3D hero" role="img">
+      {/* Scene Layer */}
       <div className="absolute inset-0">
         {canRender3D ? (
           <Suspense fallback={<div className="w-full h-full grid place-items-center text-slate-400">Loading scene…</div>}>
             <ErrorBoundary>
-              <CyberCrateScene reduced={reduced} />
+              <CyberCrateScene reduced={reduced} progress={progress} />
             </ErrorBoundary>
           </Suspense>
         ) : (
@@ -162,8 +175,8 @@ function Hero3D() {
         )}
       </div>
 
-      {/* Content */}
-      <div className="absolute inset-0 flex items-center">
+      {/* Initial content (invisible, fades out as user scrolls away from 0) */}
+      <div className="absolute inset-0 flex items-center" style={{ opacity: initialContentOpacity }}>
         <div className="mx-auto w-full max-w-6xl px-4 md:px-8">
           <div className="max-w-2xl">
             <h1 className="text-3xl md:text-5xl font-extrabold tracking-tight text-slate-100">Your Trusted Partner in UK Wholesale Distribution</h1>
@@ -176,18 +189,15 @@ function Hero3D() {
         </div>
       </div>
 
-      {/* Overlay gradient for text legibility */}
-      <div className="pointer-events-none absolute inset-0 bg-gradient-to-t from-slate-950/70 via-transparent to-slate-950/20"/>
-
-      {/* Futuristic HUD overlay */}
-      <HUDOverlay reduced={reduced} />
+      {/* HUD overlay + final content fade in is handled inside HUDOverlay */}
+      <HUDOverlay reduced={reduced} progress={progress} />
 
       {!canRender3D && (
         <div className="sr-only" aria-live="polite">3D scene disabled due to reduced motion preference or unsupported WebGL. Showing static image.</div>
       )}
       {debug && (
         <div className="absolute top-2 right-2 text-xs px-2 py-1 rounded bg-slate-800/80 text-slate-200 border border-slate-700">
-          reduced: {String(reduced)} | webgl: {String(hasWebGL)} | force3D: {String(force3D)} | fallback: {String(forceFallback)}
+          reduced: {String(reduced)} | webgl: {String(hasWebGL)} | force3D: {String(force3D)} | fallback: {String(forceFallback)} | progress: {progress.toFixed(2)}
         </div>
       )}
     </div>
